@@ -1,0 +1,386 @@
+---
+title: "Final Project"
+author: "Matt Boundy and Jasper Lemberg"
+date: "Submission Date: 5/7/2021"
+output:
+  pdf_document: default
+  df_print: paged
+  #html_document
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy=TRUE, tidy.opts=list(width.cutoff=80))
+
+library(randomForest)
+library(Boruta)
+library(caret)
+```
+
+***
+
+\newpage{}
+\section{1. Abstract}
+Using R and a number of methods learned this past semester, we have implemented one random forest model for supervised learning, one k-means model for unsupervised learning, the Boruta Algorithm for feature selection, and grid search to improve on the aforementioned random forest model. These models and methods were implemented on the telecom.data data set, which consists of almost 6,000 surveyed telecom customers on various factors such as gender, whether they have phone service, and monthly costs in order to predict whether they would leave their service behind or not (also known as churn). Using the aforementioned models, we were able to predict which customers were most likely to leave using a number of these factors and then attempted to find ways to improve on these models with varying levels of success. In the end, our models can predict expected churn with an accuracy of around 80%.
+
+***
+
+\section{2. Introduction}
+
+
+\subsection{Background and Goals}
+
+The data set that we are using is from a telecommunications company observing their customer data. There are nearly 6,000 rows and 22 columns. These columns include customer data on individual demographics as well as the services they use, the duration of using the operator's services, the method of payment, and the amount of payment.
+
+The goal of this dataset is to predict the Churn column with a model. Churn is whether or not a customer renews their contract at the end of the year. If you would be able to predict the likelihood of churning for certain customer's you would be able to better target them with deals or promotions so that they would be more likely to renew their contract. Then with customers that would likely remain, less efforts would need to be made to get them to stick with your company. To predict this we will be looking at demographics and contract plans for a variety of customers.
+
+
+\subsection{Dataset} 
+
+```{r preprocessing, echo = FALSE}
+telecom.init.data <- read.csv("telecom_users.csv")
+telecom.data <- subset(telecom.init.data, select = c(-1, -2))
+
+telecom.data$gender = ifelse(telecom.data$gender == "Male", 0, 1)
+telecom.data$gender <- as.numeric(telecom.data$gender)
+
+telecom.data$Partner = ifelse(telecom.data$Partner == "No", 0, 1)
+telecom.data$Partner <- as.numeric(telecom.data$Partner)
+
+telecom.data$Dependents = ifelse(telecom.data$Dependents == "No", 0, 1)
+telecom.data$Dependents <- as.numeric(telecom.data$Dependents)
+
+telecom.data$PhoneService = ifelse(telecom.data$PhoneService == "No", 0, 1)
+telecom.data$PhoneService <- as.numeric(telecom.data$PhoneService)
+
+telecom.data$MultipleLines[telecom.data$MultipleLines == "No"] = 0
+telecom.data$MultipleLines[telecom.data$MultipleLines == "Yes"] = 1
+telecom.data$MultipleLines[telecom.data$MultipleLines == "No phone service"] = -1
+telecom.data$MultipleLines <- as.numeric(telecom.data$MultipleLines)
+telecom.data$MultipleLines[telecom.data$MultipleLines == -1] =
+  mean(telecom.data$MultipleLines, na.rm = T)
+
+telecom.data$InternetService[telecom.data$InternetService == "No"] = 0
+telecom.data$InternetService[telecom.data$InternetService == "Fiber optic"] = 1
+telecom.data$InternetService[telecom.data$InternetService == "DSL"] = 2
+telecom.data$InternetService <- as.numeric(telecom.data$InternetService)
+
+telecom.data$OnlineSecurity[telecom.data$OnlineSecurity == "No"] = 0
+telecom.data$OnlineSecurity[telecom.data$OnlineSecurity == "Yes"] = 1
+telecom.data$OnlineSecurity[telecom.data$OnlineSecurity == "No internet service"] = -1
+telecom.data$OnlineSecurity <- as.numeric(telecom.data$OnlineSecurity)
+telecom.data$OnlineSecurity[telecom.data$OnlineSecurity == -1] =
+  mean(telecom.data$OnlineSecurity, na.rm = T)
+
+telecom.data$OnlineBackup[telecom.data$OnlineBackup == "No"] = 0
+telecom.data$OnlineBackup[telecom.data$OnlineBackup == "Yes"] = 1
+telecom.data$OnlineBackup[telecom.data$OnlineBackup == "No internet service"] = -1
+telecom.data$OnlineBackup <- as.numeric(telecom.data$OnlineBackup)
+telecom.data$OnlineBackup[telecom.data$OnlineBackup == -1] =
+  mean(telecom.data$OnlineBackup, na.rm = T)
+
+telecom.data$DeviceProtection[telecom.data$DeviceProtection == "No"] = 0
+telecom.data$DeviceProtection[telecom.data$DeviceProtection == "Yes"] = 1
+telecom.data$DeviceProtection[telecom.data$DeviceProtection == "No internet service"] = -1
+telecom.data$DeviceProtection <- as.numeric(telecom.data$DeviceProtection)
+telecom.data$DeviceProtection[telecom.data$DeviceProtection == -1] = 
+  mean(telecom.data$DeviceProtection, na.rm = T)
+
+telecom.data$TechSupport[telecom.data$TechSupport == "No"] = 0
+telecom.data$TechSupport[telecom.data$TechSupport == "Yes"] = 1
+telecom.data$TechSupport[telecom.data$TechSupport == "No internet service"] = -1
+telecom.data$TechSupport <- as.numeric(telecom.data$TechSupport)
+telecom.data$TechSupport[telecom.data$TechSupport == -1] = 
+  mean(telecom.data$TechSupport, na.rm = T)
+
+telecom.data$StreamingTV[telecom.data$StreamingTV == "No"] = 0
+telecom.data$StreamingTV[telecom.data$StreamingTV == "Yes"] = 1
+telecom.data$StreamingTV[telecom.data$StreamingTV == "No internet service"] = -1
+telecom.data$StreamingTV <- as.numeric(telecom.data$StreamingTV)
+telecom.data$StreamingTV[telecom.data$StreamingTV == -1] = 
+  mean(telecom.data$StreamingTV, na.rm = T)
+
+telecom.data$StreamingMovies[telecom.data$StreamingMovies == "No"] = 0
+telecom.data$StreamingMovies[telecom.data$StreamingMovies == "Yes"] = 1
+telecom.data$StreamingMovies[telecom.data$StreamingMovies == "No internet service"] = -1
+telecom.data$StreamingMovies <- as.numeric(telecom.data$StreamingMovies)
+telecom.data$StreamingMovies[telecom.data$StreamingMovies == -1] = 
+  mean(telecom.data$StreamingMovies, na.rm = T)
+
+telecom.data$Contract[telecom.data$Contract == "One year"] = 1
+telecom.data$Contract[telecom.data$Contract == "Two year"] = 2
+telecom.data$Contract[telecom.data$Contract == "Month-to-month"] = 3
+telecom.data$Contract <- as.numeric(telecom.data$Contract)
+
+telecom.data$PaperlessBilling = ifelse(telecom.data$PaperlessBilling == "No", 0, 1)
+telecom.data$PaperlessBilling <- as.numeric(telecom.data$PaperlessBilling)
+
+telecom.data$PaymentMethod[telecom.data$PaymentMethod == "Electronic check"] = 1
+telecom.data$PaymentMethod[telecom.data$PaymentMethod == "Mailed check"] = 2
+telecom.data$PaymentMethod[telecom.data$PaymentMethod == "Credit card (automatic)"] = 3
+telecom.data$PaymentMethod[telecom.data$PaymentMethod == "Bank transfer (automatic)"] = 4
+telecom.data$PaymentMethod <- as.numeric(telecom.data$PaymentMethod)
+
+telecom.data$TotalCharges[is.na(telecom.data$TotalCharges)] = 
+  mean(telecom.data$TotalCharges, na.rm = T)
+
+telecom.data$Churn = ifelse(telecom.data$Churn == "No", 0, 1)
+telecom.data$Churn <- as.numeric(telecom.data$Churn)
+
+telecom.data.scaled <- as.data.frame(scale(subset(telecom.data, 
+                                                  select = -Churn)))
+telecom.labels = rep(c(1,2), each = 2993)
+```
+Before we could start creating any sort of model, the data had to be cleaned and preprocessed. First, the first two columns of the data set were just unique customer IDs (essentially labels), so they were removed so that they would not affect the final models. From there, all of the variables were turned into numeric types to standardize the data. Because most, if not all, of the predictors were binary, this was fairly simple. Any binary variables (partner, dependents, etc.) were turned into 0s and 1s, with 0 being "No" and 1 being "Yes". For variables that included values like "No phones service" (PhoneService) that relied on previous yes/no variables, those values became -1 if they fell into that category. Lastly, only TotalCharges contained any NA values, which were replaced with the mean of that variable's other values. 
+
+For the unsupervised methods, the data was scaled so that the mean was 0 and the standard deviation was 1. 
+
+```{r summary, include = FALSE}
+summary(telecom.data)
+```
+
+```{r eda, include = FALSE}
+boxplot(subset(telecom.data, select = c(-5, -18, -19)), 
+        main = "Boxplots for (Almost) All Variables in telecom.data", col = 2)
+par(mfrow = c(1, 2))
+boxplot(subset(telecom.data, select = c(5, 18)), 
+        main = "Boxplots for Tenure and \nMonthlyCharges", col = c(4, 7))
+boxplot(telecom.data$TotalCharges, 
+        main = "Boxplot for TotalCharges", col = 3)
+```
+Most of the data lies between 0 and 1 except for tenure, InternetService, Contract, PaymentMethod, MonthlyCharges, and TotalCharges, with some exceptions and outliers. First, the values for SeniorCitizen and PhoneService are skewed right and skewed left respectively, so any points that are 1 for the former and 0 for the latter are outliers. Also, seventy-five percent of the data for InternetService lies above 1, seventy-five percent of the data for Contract lies above 2, and seventy-five percent of the data for PaymentMethod lies below 4. The data for tenure, MonthlyCharges, and TotalCharges is fairly even with means of 32.47, 64.8, and 2298.1 respectively. That being said, there is a fairly large upper bound on the data for TotalCharges because the maximum is 8684.8, whereas the third quartile is only 3841.5. 
+
+
+***
+\section{3. Methodology}
+\subsection{a. Supervised Method}
+
+After considering multiple methods for supervised learning, we decided to use a random forest model for classifying customers, with Churn as a response variable. Before understanding what a random forest is, it is important to know what a decision tree is. In short, a tree is a method of predicting the response value of the data through various rules (James et al. 304). A greedy algorithm based on variable importance determines these rules. For a classification tree, each node of the tree equals a classification (in this case, either 1 for positive churn or 0 for negative churn). This will split the data into segments rather than having a single line split the data. An expansion on that tree idea is the random forest, which consists of multiple bootstrapped trees, each with a random number of predictors (James et al. 319). This method decorrelates the trees and decreases variance on the whole. 
+
+However, this method has a number of hyperparameters that we need to tune. To find the right number of trees and predictors, we implemented a five fold cross-validated grid search to find the optimal number of parameters that maximized model accuracy and f1 score. 
+
+\subsection{b. Unsupervised Method}
+
+For unsupervised learning, we decided to use a k-means model to cluster the data. The k-means method splits the data into $k$ clusters in order to limit within-cluster variation (James et al. 386). By default, we used squared Euclidean distance to calculate the within-cluster variation. Because there are almost infinitely many options for how to cluster data, the algorithm we used for k-means clustering first assigns random cluster values to all of the data and then recomputes the clusters so that all points inside them are closest to its centroid and only its centroid. 
+
+\subsection{c. Feature Selection}
+
+Of course, using all predictors in the model would be unfeasible and could include redundant predictors that have no effect on the final model while also adding computing time. To solve this, we used the Boruta Algorithm to select only the most important features for the model. This algorithm is considered a wrapper class in that it searches through a number of possible feature subspaces and accounts for interactions between features as well (Bontempi 322). More specifically, the Boruta Algorithm randomly compares features' original importance with their importance in random permutations (Kursa). By default, the package takes in a random forest model and, after a top-down search, outputs a graph of how important each feature is to the overall model. 
+
+\subsection{d. Model Improvement}
+
+In order to improve our random forest model for supervised learning, we implemented a grid search to find the optimal hyperparameters for the model. Using the caret library, we could search through a number of possible values for the hyperparameters of the random forest model to find one that is most accurate. 
+
+***
+\section{4. Analysis/Summary}
+\subsection{a. Supervised Method: Random Forest}
+
+```{r functions.and.constants, include = FALSE}
+#Functions to calculate accuracy and F1
+cal.acc = function(t){
+  return((t[1] + t[4]) / sum(t))
+}
+cal.f1 = function(t){
+  return(2 * ((cal.prec(t) * cal.rec(t)) / (cal.prec(t) + cal.rec(t))))
+}
+cal.prec = function(t){
+  return(t[4] / (t[4] + t[3]))
+}
+cal.rec = function(t){
+  return(t[4] / (t[4] + t[2]))
+}
+
+#Folds for 5-fold cross validation
+set.seed(99)
+folds = sample(1:5, nrow(telecom.data), replace=TRUE)
+```
+
+```{r rf.grid, eval = FALSE, echo = FALSE}
+set.seed(99)
+predictors = c(1:19)
+trees = c(10, 25, 50, 75, 100, 250, 500)
+rf.acc.storage = matrix(NA, length(predictors), length(trees))
+rownames(rf.acc.storage) = predictors
+colnames(rf.acc.storage) = trees
+rf.f1.storage = matrix(NA, length(predictors), length(trees))
+rownames(rf.f1.storage) = predictors
+colnames(rf.f1.storage) = trees
+for(p in 1:length(predictors)){
+  for(t in 1:length(trees)){
+    for(c in 1:5){
+      set.seed(99)
+      rf = randomForest(factor(Churn) ~ ., data = telecom.data[folds != c, ], 
+                        mtry = predictors[p],
+                        ntree = trees[t], importance=TRUE)
+      rf.pred = predict(rf, newdata = telecom.data[folds == c, ], 
+                        n.trees = trees[t])
+      rf.cm = table(Actual = telecom.data[folds == c, ]$Churn, 
+                    Predicted = rf.pred)
+      rf.acc.storage[p, t] = ifelse(is.na(rf.acc.storage[p, t]), 
+                                    cal.acc(rf.cm), 
+                                    rf.acc.storage[p, t] + cal.acc(rf.cm))
+      rf.f1.storage[p, t] = ifelse(is.na(rf.f1.storage[p, t]), 
+                                   cal.f1(rf.cm), 
+                                   rf.f1.storage[p, t] + cal.f1(rf.cm))
+    }
+  }
+}
+rf.acc.storage = rf.acc.storage/5
+rf.acc.storage
+which(rf.acc.storage == max(rf.acc.storage), arr.ind = TRUE)
+rf.f1.storage = rf.f1.storage/5
+rf.f1.storage
+which(rf.f1.storage == max(rf.f1.storage), arr.ind = TRUE)
+beepr::beep()
+#Looks like 2 predictors and 75 trees is pretty good for accuracy and F1
+```
+
+```{r rf, echo = FALSE}
+rf.acc.storage = c()
+rf.rec.storage = c()
+rf.prec.storage = c()
+rf.f1.storage = c()
+for(c in 1:5){
+  set.seed(99)
+  rf = randomForest(factor(Churn) ~ ., data = telecom.data[folds != c, ], 
+                    mtry = 2, ntree = 75, importance=TRUE)
+  rf.pred = predict(rf, newdata = telecom.data[folds == c, ], n.trees = 75)
+  rf.cm = table(Actual = telecom.data[folds == c, ]$Churn, Predicted = rf.pred)
+  rf.cm.accuracy = cal.acc(rf.cm)
+  rf.acc.storage = append(rf.acc.storage, rf.cm.accuracy)
+  rf.cm.recall = cal.rec(rf.cm)
+  rf.rec.storage = append(rf.rec.storage, rf.cm.recall)
+  rf.cm.precision = cal.prec(rf.cm)
+  rf.prec.storage = append(rf.prec.storage, rf.cm.precision)
+  rf.cm.f1 = cal.f1(rf.cm)
+  rf.f1.storage = append(rf.f1.storage, rf.cm.f1)
+}
+rf.mat <- matrix(c(mean(rf.acc.storage), mean(rf.rec.storage), 
+                   mean(rf.prec.storage), mean(rf.f1.storage)), ncol = 4)
+colnames(rf.mat) = c("Accuracy", "Recall", "Precision", "F1 Score")
+knitr::kable(rf.mat, caption = "Random Forest Confusion Matrix Data")
+```
+As shown above, the accuracy of the model was 0.8032552, the recall was 0.4839722, the precision was 0.6827296, and the F1 score was 0.5656747. While these are not perfect values, These are perfectly feasible results and are much better than the same values for other classification models (bagging, KNN, LDA, etc.).
+
+
+\subsection{b. Unsupervised Method: K-Means}
+
+```{r k.means, include = FALSE}
+sse = rep(0, 10)
+for (c in 1:10) {
+  set.seed(99)
+  fit = kmeans(telecom.data.scaled, centers = c)
+  sse[c] = fit$totss - fit$betweenss
+}
+plot(sse,type='b')
+#looks like k = 3 is the "elbow" of the graph
+
+set.seed(99)
+k.means = kmeans(telecom.data.scaled, 2, nstart = 20)
+k.means.cm <- table(telecom.labels, k.means$cluster)
+k.means.cm
+cal.acc(k.means.cm)
+```
+
+```{r k.means.plots, eval = FALSE, echo = FALSE}
+plot(telecom.data.scaled[1:5], col = k.means$cluster)
+plot(telecom.data.scaled[6:10], col = k.means$cluster)
+plot(telecom.data.scaled[11:15], col = k.means$cluster)
+plot(telecom.data.scaled[16:19], col = k.means$cluster)
+```
+```{r k.means.table, echo = FALSE}
+k.means.mat <- as.matrix(k.means.cm)
+colnames(k.means.mat) = c("Predicted 0", "Predicted 1")
+rownames(k.means.mat) = c("Actual 0", "Actual 1")
+knitr::kable(k.means.mat, caption = "K-Means Confusion Matrix 
+             (accuracy = 0.5045105)", 
+             xlab = "Predicted", ylab = "Actual")
+```
+Unlike the supervised learning method, the k-means method used to cluster results into 2 clusters was less effective, having an accuracy of just over 0.5. However, this was much better than other methods like hierarchical clustering, which had a similar accuracy, but only because all of the points were lumped into one cluster. Thus, it was the equivalent of a broken clock being right twice a day. 
+
+
+\subsection{c. Feature Selection}
+
+```{r feature.selection, echo = FALSE}
+boruta_output <- Boruta(Churn ~ ., data=telecom.data, doTrace=0)
+plot(boruta_output, cex.axis = 0.7, las = 2, xlab = "", 
+     main = "Variable Importance")
+```
+For the feature selection method we chose to go with the Boruta method. It was able to rank our variables in how important they are in determining the predicted Churn either a 1 or a 0. Using this method we were able to see that tenure, Contract, TotalCharges, MonthlyCharges, and OnlineSecurity were the most important predictor variables. tenure being the most important with around a 50% importance. However, a model consisting of just these five predictors did not perform as well as the model with all predictors, as shown by the table below. 
+
+```{r rf.new.features, echo = FALSE}
+new.rf.acc.storage = c()
+new.rf.rec.storage = c()
+new.rf.prec.storage = c()
+new.rf.f1.storage = c()
+for(c in 1:5){
+  set.seed(99)
+  new.rf = randomForest(factor(Churn) ~ tenure + Contract + TotalCharges + 
+                          MonthlyCharges + OnlineSecurity, 
+                        data = telecom.data[folds != c, ], 
+                        mtry = 2, ntree = 75, importance=TRUE)
+  new.rf.pred = predict(new.rf, newdata = telecom.data[folds == c, ], 
+                        n.trees = 75)
+  new.rf.cm = table(Actual = telecom.data[folds == c, ]$Churn, 
+                    Predicted = new.rf.pred)
+  new.rf.cm.accuracy = cal.acc(new.rf.cm)
+  new.rf.acc.storage = append(new.rf.acc.storage, new.rf.cm.accuracy)
+  new.rf.cm.recall = cal.rec(new.rf.cm)
+  new.rf.rec.storage = append(new.rf.rec.storage, new.rf.cm.recall)
+  new.rf.cm.precision = cal.prec(new.rf.cm)
+  new.rf.prec.storage = append(new.rf.prec.storage, new.rf.cm.precision)
+  new.rf.cm.f1 = cal.f1(new.rf.cm)
+  new.rf.f1.storage = append(new.rf.f1.storage, new.rf.cm.f1)
+}
+new.rf.mat <- matrix(c(mean(rf.acc.storage), mean(new.rf.acc.storage),
+                       mean(rf.rec.storage), mean(new.rf.rec.storage), 
+                       mean(rf.prec.storage), mean(new.rf.prec.storage), 
+                       mean(rf.f1.storage), mean(new.rf.f1.storage)), 
+                     nrow = 2, ncol = 4)
+colnames(new.rf.mat) = c("Accuracy", "Recall", "Precision", "F1 Score")
+rownames(new.rf.mat) = c("Before Feature Selection", "After Feature Selection")
+knitr::kable(new.rf.mat, caption = "Random Forest Confusion Matrix Data with 
+             Feature Selection")
+```
+
+
+
+\subsection{d. Model Improvement}
+
+```{r rf.improvement, eval = FALSE, echo = FALSE}
+control <- trainControl(method = "repeatedcv", number = 10, repeats = 3, 
+                        search = "grid")
+set.seed(99)
+tunegrid <- expand.grid(.mtry = c(1:15))
+rf_gridsearch <- train(as.factor(Churn) ~ ., data = telecom.data, 
+                       method = "rf", tuneGrid = tunegrid, trControl = control)
+plot(rf_gridsearch)
+```
+For the method to improve the models, we used the grid search method to improve upon the random forests model that was used in as our supervised method. Although we had used a cross-validated grid search initially to find the optimal values needed for the hyperparameters, this was mostly done with a crude eyeballing method rather than a proper package. Using  grid search and running multiple models with the caret library, we were able to find that the optimal mtry for randomforests was 3 rather than 2 which improved our accuracy of the model by 0.1.
+
+***
+\section{5. Discussion and Critics}
+
+When applying the random forest model, it is necessary to input the response variable (in this case, Churn) as a factor. Otherwise, it will not be read correctly. Besides that, the only difficulty was the time it took for grid search and 5-fold cross validation, to which the only recommendation is to leave R running in the background and watch a movie with a nice big bowl of popcorn to pass the time. 
+
+When applying k-means clustering, we discovered that the data was not clustering well and the model produced a low accuracy (around 50%). Unfortunately, even after scaling the data (something that was necessary considering how spread out some of the points were), the data on the whole was already so dense that it was hard to distinguish individual points. Thus, it is hard to say whether the model could be improved or not. 
+
+When applying the Boruta model we discovered the data needed to be more thoroughly cleaned as there were some issues with specific predictor variable types running through the model. We were able to change this by converting certain values to binary to represent boolean statements, as well as change up any data that is missing.
+
+When applying the grid search method we found that there was an issue running our models as the predictor variable was not being read correctly. To combat this we used the as.factor() command to change Churn into a factor so that it could more easily run through the models.
+
+
+***
+\section{6. Conclusion}
+
+For the telecom.data data set, we attempted both supervised and unsupervised learning, with varying effectiveness. Whereas a random forest model for supervised learning had an accuracy of around 80%, a k-means unsupervised model was only 50% accurate, mostly because of how dense the data was. We found that when it comes to the prediction of the Churn for existing customers in a telecommunications company, the best predictors to use are tenure, Contract, MonthlyCharges, OnlineSecurity, and InternetService. Through our use of models we were able to accurately predict the Churn value approximately 80% of the time which still leaves room for improvement. When dealing with some NA values, rather than scrubbing all of the data associated with the values we implemented the mean of the column as the value indicated. This could be a source of error and if we were to revisit this project we may choose to go another direction with how we handle missing data.
+
+\newpage{}
+\section{References}
+
+Bontempi, Gianluca. (2021). "Statistical foundations of machine learning" (2nd edition) handbook. 
+
+Gareth James, Daniela Witten, Trevor Hastie, Robert Tibshirani. An Introduction to Statistical Learning : with Applications in R. New York :Springer, 2013.
+
+Miron B. Kursa, Witold R. Rudnicki (2010). Feature Selection with the Boruta Package. Journal of Statistical Software, 36(11), 1-13. URL http://www.jstatsoft.org/v36/i11/.
+
+Zosimov, Radmir. “Telecom Users Dataset.” Kaggle, 22 Feb. 2021, www.kaggle.com/radmirzosimov/telecom-users-dataset. 
